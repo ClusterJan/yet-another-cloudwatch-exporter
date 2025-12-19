@@ -60,6 +60,7 @@ type CachingFactory struct {
 	cleared             *atomic.Bool
 	fipsEnabled         bool
 	endpointURLOverride string
+	taggingCache        tagging.Cache
 }
 
 type cachedClients struct {
@@ -78,6 +79,12 @@ var _ clients.Factory = &CachingFactory{}
 
 // NewFactory creates a new client factory to use when fetching data from AWS with sdk v2
 func NewFactory(logger *slog.Logger, jobsCfg model.JobsConfig, fips bool) (*CachingFactory, error) {
+	return NewFactoryWithCache(logger, jobsCfg, fips, nil)
+}
+
+// NewFactoryWithCache creates a new client factory with optional tagging cache support.
+// If taggingCache is nil, the factory will create clients without caching.
+func NewFactoryWithCache(logger *slog.Logger, jobsCfg model.JobsConfig, fips bool, taggingCache tagging.Cache) (*CachingFactory, error) {
 	var options []func(*aws_config.LoadOptions) error
 	options = append(options, aws_config.WithLogger(aws_logging.LoggerFunc(func(classification aws_logging.Classification, format string, v ...interface{}) {
 		switch classification {
@@ -164,6 +171,7 @@ func NewFactory(logger *slog.Logger, jobsCfg model.JobsConfig, fips bool) (*Cach
 		endpointURLOverride: endpointURLOverride,
 		cleared:             atomic.NewBool(false),
 		refreshed:           atomic.NewBool(false),
+		taggingCache:        taggingCache,
 	}, nil
 }
 
@@ -189,7 +197,7 @@ func (c *CachingFactory) GetTaggingClient(region string, role model.Role, concur
 	if client := c.clients[role][region].tagging; client != nil {
 		return tagging.NewLimitedConcurrencyClient(client, concurrencyLimit)
 	}
-	c.clients[role][region].tagging = tagging_v2.NewClient(
+	c.clients[role][region].tagging = tagging_v2.NewClientWithCache(
 		c.logger,
 		c.createTaggingClient(c.clients[role][region].awsConfig),
 		c.createAutoScalingClient(c.clients[role][region].awsConfig),
@@ -200,6 +208,7 @@ func (c *CachingFactory) GetTaggingClient(region string, role model.Role, concur
 		c.createPrometheusClient(c.clients[role][region].awsConfig),
 		c.createStorageGatewayClient(c.clients[role][region].awsConfig),
 		c.createShieldClient(c.clients[role][region].awsConfig),
+		c.taggingCache,
 	)
 	return tagging.NewLimitedConcurrencyClient(c.clients[role][region].tagging, concurrencyLimit)
 }
@@ -238,7 +247,7 @@ func (c *CachingFactory) Refresh() {
 				continue
 			}
 
-			cache.tagging = tagging_v2.NewClient(
+			cache.tagging = tagging_v2.NewClientWithCache(
 				c.logger,
 				c.createTaggingClient(cache.awsConfig),
 				c.createAutoScalingClient(cache.awsConfig),
@@ -249,6 +258,7 @@ func (c *CachingFactory) Refresh() {
 				c.createPrometheusClient(cache.awsConfig),
 				c.createStorageGatewayClient(cache.awsConfig),
 				c.createShieldClient(cache.awsConfig),
+				c.taggingCache,
 			)
 
 			cache.account = account_v2.NewClient(c.logger, c.createStsClient(cache.awsConfig), c.createIAMClient(cache.awsConfig))
