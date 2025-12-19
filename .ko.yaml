@@ -1,0 +1,14 @@
+# ko configuration for yet-another-cloudwatch-exporter
+# Build multi-architecture images for linux/amd64 and linux/arm64
+
+defaultBaseImage: gcr.io/distroless/static:nonroot
+
+builds:
+  - id: yace
+    main: ./cmd/yace
+    ldflags:
+      - -s -w
+      - -X github.com/prometheus/common/version.Version={{.Env.VERSION}}
+      - -X github.com/prometheus/common/version.Revision={{.Env.REVISION}}
+      - -X github.com/prometheus/common/version.Branch={{.Env.BRANCH}}
+      - -X github.com/prometheus/common/version.BuildDate={{.Env.BUILD_DATE}}

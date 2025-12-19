@@ -14,6 +14,7 @@ package tagging
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -59,17 +60,27 @@ type ValkeyConfig struct {
 	Password string
 	// DB is the database number to use (default 0)
 	DB int
-	// TLS enables TLS connection
-	TLS bool
 }
 
 // NewValkeyCache creates a new ValkeyCache instance
 func NewValkeyCache(ctx context.Context, logger *slog.Logger, cfg ValkeyConfig) (*ValkeyCache, error) {
 	opts := valkey.ClientOption{
-		InitAddress: []string{cfg.Address},
-		Username:    cfg.Username,
-		Password:    cfg.Password,
-		SelectDB:    cfg.DB,
+		InitAddress:  []string{cfg.Address},
+		Username:     cfg.Username,
+		Password:     cfg.Password,
+		SelectDB:     cfg.DB,
+		DisableCache: true,
+		TLSConfig: &tls.Config{
+			// If you use a public CA or system trust store:
+			// RootCAs: nil,
+			//
+			// For self-signed / custom CA, load it into RootCAs here.
+			//
+			// If Valkey requires client certs (mTLS), set Certificates:
+			// Certificates: []tls.Certificate{clientCert},
+			//
+			MinVersion: tls.VersionTLS12,
+		},
 	}
 
 	client, err := valkey.NewClient(opts)

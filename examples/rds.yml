@@ -3,9 +3,12 @@ discovery:
   jobs:
     - type: AWS/RDS
       regions:
-        - us-east-1
+        - eu-central-1
       period: 300
       length: 300
+      searchTags:
+        - key: ManagedBy
+          value: .+\/dpf-datanet-abn
       metrics:
         - name: CPUUtilization
           statistics: [Maximum]
