@@ -44,10 +44,34 @@ type Cache interface {
 	Close()
 }
 
+// valkeyBackend is a narrow interface around Valkey operations used by this cache.
+// It exists to make ValkeyCache unit-testable without a real Valkey server.
+type valkeyBackend interface {
+	Get(ctx context.Context, key string) (string, error)
+	SetEX(ctx context.Context, key string, value string, ttl time.Duration) error
+	Close()
+}
+
+type valkeyBackendAdapter struct {
+	client valkey.Client
+}
+
+func (a *valkeyBackendAdapter) Get(ctx context.Context, key string) (string, error) {
+	return a.client.Do(ctx, a.client.B().Get().Key(key).Build()).ToString()
+}
+
+func (a *valkeyBackendAdapter) SetEX(ctx context.Context, key string, value string, ttl time.Duration) error {
+	return a.client.Do(ctx, a.client.B().Set().Key(key).Value(value).Ex(ttl).Build()).Error()
+}
+
+func (a *valkeyBackendAdapter) Close() {
+	a.client.Close()
+}
+
 // ValkeyCache implements the Cache interface using Valkey
 type ValkeyCache struct {
-	client valkey.Client
-	logger *slog.Logger
+	backend valkeyBackend
+	logger  *slog.Logger
 }
 
 // ValkeyConfig holds configuration for connecting to Valkey
@@ -97,14 +121,14 @@ func NewValkeyCache(ctx context.Context, logger *slog.Logger, cfg ValkeyConfig) 
 	logger.Info("Connected to Valkey cache", "address", cfg.Address)
 
 	return &ValkeyCache{
-		client: client,
-		logger: logger,
+		backend: &valkeyBackendAdapter{client: client},
+		logger:  logger,
 	}, nil
 }
 
 // Get retrieves cached resource tag mappings for the given cache key
 func (c *ValkeyCache) Get(ctx context.Context, key string) ([]ResourceTagMappingCache, error) {
-	result, err := c.client.Do(ctx, c.client.B().Get().Key(key).Build()).ToString()
+	result, err := c.backend.Get(ctx, key)
 	if err != nil {
 		if valkey.IsValkeyNil(err) {
 			c.logger.Debug("Cache miss", "key", key)
@@ -129,7 +153,7 @@ func (c *ValkeyCache) Set(ctx context.Context, key string, mappings []ResourceTa
 		return fmt.Errorf("failed to marshal data for cache: %w", err)
 	}
 
-	err = c.client.Do(ctx, c.client.B().Set().Key(key).Value(string(data)).Ex(ttl).Build()).Error()
+	err = c.backend.SetEX(ctx, key, string(data), ttl)
 	if err != nil {
 		return fmt.Errorf("failed to set cache: %w", err)
 	}
@@ -140,7 +164,7 @@ func (c *ValkeyCache) Set(ctx context.Context, key string, mappings []ResourceTa
 
 // Close closes the Valkey connection
 func (c *ValkeyCache) Close() {
-	c.client.Close()
+	c.backend.Close()
 }
 
 // BuildCacheKey creates a cache key from resource filters and tag filter keys
