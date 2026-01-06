@@ -15,7 +15,6 @@ package tagging
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -47,10 +46,10 @@ func (b fakeValkeyBackend) Close() {}
 
 func TestValkeyCache_GetMissReturnsNilSlice(t *testing.T) {
 	cache := &ValkeyCache{
-		backend: fakeValkeyBackend{getFn: func(ctx context.Context, key string) (string, error) {
+		backend: fakeValkeyBackend{getFn: func(_ context.Context, _ string) (string, error) {
 			return "", valkey.Nil
 		}},
-		logger: slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{})),
+		logger: slog.New(slog.DiscardHandler),
 	}
 
 	mappings, err := cache.Get(context.Background(), "missing")
@@ -63,19 +62,19 @@ func TestValkeyCache_SetThenGetRoundTrip(t *testing.T) {
 
 	cache := &ValkeyCache{
 		backend: fakeValkeyBackend{
-			getFn: func(ctx context.Context, key string) (string, error) {
+			getFn: func(_ context.Context, key string) (string, error) {
 				value, ok := stored[key]
 				if !ok {
 					return "", valkey.Nil
 				}
 				return value, nil
 			},
-			setExFn: func(ctx context.Context, key string, value string, ttl time.Duration) error {
+			setExFn: func(_ context.Context, key string, value string, _ time.Duration) error {
 				stored[key] = value
 				return nil
 			},
 		},
-		logger: slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{})),
+		logger: slog.New(slog.DiscardHandler),
 	}
 
 	key := "somekey"
@@ -92,10 +91,10 @@ func TestValkeyCache_SetThenGetRoundTrip(t *testing.T) {
 
 func TestValkeyCache_GetInvalidJSONReturnsError(t *testing.T) {
 	cache := &ValkeyCache{
-		backend: fakeValkeyBackend{getFn: func(ctx context.Context, key string) (string, error) {
+		backend: fakeValkeyBackend{getFn: func(_ context.Context, _ string) (string, error) {
 			return "not-json", nil
 		}},
-		logger: slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{})),
+		logger: slog.New(slog.DiscardHandler),
 	}
 
 	_, err := cache.Get(context.Background(), "bad")
@@ -105,11 +104,11 @@ func TestValkeyCache_GetInvalidJSONReturnsError(t *testing.T) {
 func TestValkeyCache_SetStoresJSON(t *testing.T) {
 	var storedValue string
 	cache := &ValkeyCache{
-		backend: fakeValkeyBackend{setExFn: func(ctx context.Context, key string, value string, ttl time.Duration) error {
+		backend: fakeValkeyBackend{setExFn: func(_ context.Context, _ string, value string, _ time.Duration) error {
 			storedValue = value
 			return nil
 		}},
-		logger: slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{})),
+		logger: slog.New(slog.DiscardHandler),
 	}
 
 	original := []ResourceTagMappingCache{{ResourceARN: "arn:aws:s3:::bucket", Tags: map[string]string{"team": "core"}}}
